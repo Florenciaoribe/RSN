@@ -1,6 +1,8 @@
 Florencia Oribe.
 
-# Práctica: Instalación de un Proxmox
+# Práctica 1:
+
+## Práctica 1a: Instalación de un Proxmox
 
 
 ## Objetivo
@@ -118,3 +120,32 @@ Hemos configurado la red NAT, comprobado la conectividad mediante SSH, preparado
 Además, hemos obtenido el certificado de la autoridad certificadora de Proxmox, comprobado su huella SHA-256 e importado el certificado en Firefox.
 
 Con estos pasos hemos preparado un entorno de virtualización para administrar máquinas virtuales y contenedores desde Proxmox.
+
+
+
+
+# Práctica 1b - Redundancia y almacenamiento en PROXMOX
+
+## ZFS con mirror
+Creamos dos discos duros virtuales de 50GB.
+- ![alt text](./IMG/discos.png)
+
+Creamos el mirror de zfs llamado *pve-storage*
+```bash
+zpool create -o ashift=12 pve-storage mirror /dev/sdb /dev/sdc
+```
+
+Comprobamos estado y capacidad:
+- ![alt text](./IMG/estado.png)
+
+Creamos el pool desde la interfaz web con los siguientes datos:
+
+```text
+ID: zfs-lab
+ZFS Pool: pve-storage
+Content: Disk image y, si se crearán contenedores, Container (rootdir)
+Node: el nodo actual
+Activa Thin provision si aparece en el formulario
+```
+
+- ![alt text](./IMG/pve-storage.png)
