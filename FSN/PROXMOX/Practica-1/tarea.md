@@ -149,3 +149,138 @@ Activa Thin provision si aparece en el formulario
 ```
 
 - ![alt text](./IMG/pve-storage.png)
+
+
+## RAID 1 con mdadm
+1. Identificamos los dos discos de laboratorio:
+
+```bash
+lsblk -o NAME,SIZE,TYPE,FSTYPE,MOUNTPOINTS,MODEL
+```
+
+2. Creamos el array RAID 1 con los dispositivos de laboratorio correctos:
+```bash
+mdadm --create /dev/md0 --level=1 --raid-devices=2 /dev/sdb /dev/sdc
+```
+![alt text](image.png)
+
+
+
+3. Comprobamos el estado:
+```bash
+mdadm --detail /dev/md0
+cat /proc/mdstat
+```
+Que estado tiene el md0.
+
+![alt text](image-1.png)
+
+
+Hemos creado un array de disco y lo hemos registrado en proxmox. Para que cuando arranque lo idnentifique como arranque de disco..
+Añadiendo el array 
+ARRAY /dev/md0 metadata=1.2 UUID=5f70d22b:d6b111b6:7e758936:0305b089
+al fichero /etc/mdadm/mdadm.conf
+
+![alt text](image-4.png)
+
+![alt text](image-3.png)
+
+
+
+- ![alt text](image-5.png)
+
+- ![alt text](image-8.png)
+- ![alt text](image-9.png)
+- ![alt text](image-16.png)
+
+![alt text](image-17.png)
+
+
+
+
+![alt text](image-15.png)
+
+formatemos : 
+```bash
+mkfs.ext4 /dev/raid1-vg/proxmox-data
+```
+creo punto de montaje
+mkdir -p /mnt/raid1-lab
+monto el dispositivo en el punto de monataje asignado
+mount /dev/raid1-vg/proxmox-data /mnt/raid1-lab/
+df -h /mnt/raid1-lab
+
+COmprobamos que se ha montado: 
+![alt text](image-6.png)
+
+Para que quede resistente modificar el fstab
+![alt text](image-7.png)
+
+
+UUID="4e6a89ca-47d4-478a-9cf0-60535c497b6e" /mnt/raid1-lab ext4 defaults,nofail,x-systemd.device-timeout=5s 0 2
+Y montamos con el comando 'mount -a'
+
+
+
+4. Simulación de fallo de disco
+
+```bash
+mdadm --manage <ARRAY> --fail sdd
+mdadm --manage <ARRAY> --remove sdd
+mdadm --manage <ARRAY> --add sdd
+```
+
+
+
+Verifica que sigue activo en estado degradado:
+![alt text](estado.png)
+
+- Incoroportamos neuvamente el disco.
+![alt text](image-18.png)
+
+
+
+ Conclusión técnica
+ZFS mirror y mdadm RAID1 mantienen el servicio ante la caída de un miembro, pero no sustituyen a las
+copias de seguridad: fallos del sistema, corrupción o errores humanos aún pueden exigir una restauración.
+Elige según la gestión, recuperación, snapshots y compatibilidad que necesite el escenario.
+10. Reflexión y preguntas
+Responde con tus propias palabras:
+1. ¿Qué diferencia existe entre un volumen lógico y un sistema de archivos?
+2. ¿Qué ventajas tiene RAID 1 frente a RAID 0?
+3. ¿Por qué la redundancia no sustituye a las copias de seguridad?
+4. ¿Qué función tiene un zpool en ZFS?
+5. ¿Qué diferencia existe entre un dataset y un zvol?
+6. ¿Qué es un mirror y qué fallo puede tolerar el mirror de dos discos de esta práctica?
+7. ¿Qué diferencia hay entre LVM-Thin y ZFS a la hora de almacenar discos de VM?
+8. ¿Por qué LVM no aporta redundancia por sí solo?
+9. ¿Qué diferencia existe entre el RAID gestionado por mdadm y un mirror ZFS?
+10. ¿Qué información aporta el estado del array o del pool después de simular un fallo?
+11. ¿Qué representa el disco virtual que ve la VM y qué capas puede crear dentro de él?
+12. ¿Qué ventajas y riesgos tiene el aprovisionamiento thin? ¿Qué indican Data% y Meta%?
+13. ¿Qué capas comparten los casos 2 y 3, y en qué se diferencian a partir del VG?
+11. Entrega
+La entrega debe incluir, como mínimo:
+Capturas de la configuración de los discos de laboratorio en VirtualBox.
+Captura de lsblk donde se identifiquen los discos añadidos.
+Capturas del estado y la capacidad de los tres casos: zpool status y zpool list; mdadm --
+detail, cat /proc/mdstat, pvs, vgs y lvs; y, para LVM-Thin, lvs -a -
+o+segtype,lv_size,data_percent,metadata_percent.
+Captura de Datacenter → Storage mostrando cada uno de los tres almacenamientos registrados.
+Explicación de la capacidad útil y las capas de cada caso.
+Evidencia y explicación de las tres simulaciones de fallo y de la recuperación de cada miembro.
+Respuestas redactadas a las preguntas de reflexión.
+Conclusión sobre qué tecnología resulta más útil para el escenario estudiado y por qué.
+
+
+
+# PRÁCTICA 1C - COMPARACIÓN DE ALMACENAMIENTO CON LXC EN PROXMOX
+
+2. Objetivos de la práctica
+Crear y configurar un contenedor LXC en Proxmox.
+Comparar rendimiento, consumo de recursos (CPU y RAM) y facilidad de gestión.
+Comparar el rendimiento y la gestión de ZFS, LVM clásico y LVM-Thin para rootfs de LXC.
+
+
+3. Medicion
+ya cree un contenedor
