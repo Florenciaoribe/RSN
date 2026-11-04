@@ -525,3 +525,8 @@ De todas formas, estos resultados corresponden a nuestro entorno de pruebas con 
 ---
 
 **Nota final:** Las pruebas se han realizado en un entorno virtualizado, por lo que los resultados obtenidos sirven para comparar esta configuración concreta del laboratorio y no representan necesariamente el rendimiento de estos sistemas en un servidor físico.
+
+
+
+
+redes contenedores
