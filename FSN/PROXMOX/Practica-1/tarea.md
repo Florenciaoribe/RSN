@@ -530,3 +530,452 @@ De todas formas, estos resultados corresponden a nuestro entorno de pruebas con 
 
 
 # PRÁCTICA 1D - DESPLIEGUE DE PAIPORTARBOLADO EN DOS LXC EN PROXMOX
+
+
+
+
+
+
+## 4. Instalación de Apache y PHP
+
+Entramos en el frontend:
+
+```bash
+pct enter 104
+```
+
+Actualizamos los repositorios e instalamos Apache y PHP:
+
+```bash
+apt update
+apt install -y apache2 php libapache2-mod-php php-mysql
+```
+
+Entramos en el backend:
+
+```bash
+pct enter 105
+```
+
+Instalamos MySQL:
+
+```bash
+apt update
+apt install -y mysql-server
+```
+
+### Configuración de acceso remoto
+
+Editamos:
+
+```bash
+nano /etc/mysql/mysql.conf.d/mysqld.cnf
+```
+
+Modificamos la dirección de escucha:
+
+```ini
+bind-address = 192.168.30.11
+```
+
+De esta forma, MySQL escucha en la IP privada del backend.
+
+Reiniciamos el servicio:
+
+```bash
+systemctl restart mysql
+```
+
+Comprobamos el puerto:
+
+```bash
+ss -tlnp | grep 3306
+```
+## 6. Creación de la base de datos y usuario
+
+Entramos en MySQL:
+
+```bash
+mysql -u root
+```
+
+Creamos la base de datos:
+
+```sql
+CREATE DATABASE PaiportArbolado
+CHARACTER SET utf8mb4
+COLLATE utf8mb4_unicode_ci;
+```
+
+Creamos un usuario para que el frontend pudiera conectarse:
+
+```sql
+CREATE USER 'paiporta'@'192.168.30.10'
+IDENTIFIED BY 'CONTRASEÑA_PRIVADA';
+```
+
+Asignamos los permisos necesarios:
+
+```sql
+GRANT SELECT, INSERT, UPDATE, DELETE
+ON PaiportArbolado.*
+TO 'paiporta'@'192.168.30.10';
+```
+
+Comprobamos los permisos:
+
+```sql
+SHOW GRANTS FOR 'paiporta'@'192.168.30.10';
+```
+
+### Comprobación desde el frontend
+
+Instalamos únicamente el cliente MySQL:
+
+```bash
+apt install -y default-mysql-client
+```
+
+Probamos la conexión:
+
+```bash
+mysql -h 192.168.30.11 -u paiporta -p PaiportArbolado
+```
+
+- ![alt text](conexion.png)
+
+## 7. Configuración del firewall
+
+Configuramos el firewall de Proxmox para restringir el acceso al puerto 3306 del backend.
+
+Al activar el firewall desde Datacenter perdimos temporalmente el acceso a Proxmox.
+
+Para solucionarlo accedimos desde la consola de VirtualBox y detuvimos el servicio:
+
+```bash
+systemctl stop pve-firewall
+```
+
+### Configuración de Datacenter
+
+Editamos:
+
+```bash
+nano /etc/pve/firewall/cluster.fw
+```
+
+Añadimos:
+
+```ini
+[OPTIONS]
+enable: 1
+
+[RULES]
+IN ACCEPT -p tcp -dport 8006
+IN ACCEPT -p tcp -dport 22
+```
+
+Estas reglas permiten acceder a la administración web y por SSH.
+
+### Configuración del contenedor 105
+
+Creamos el archivo:
+
+```bash
+nano /etc/pve/firewall/105.fw
+```
+
+Añadimos:
+
+```ini
+[OPTIONS]
+enable: 1
+policy_in: ACCEPT
+policy_out: ACCEPT
+
+[RULES]
+IN ACCEPT -source 192.168.30.10/32 -p tcp -dport 3306
+IN DROP -p tcp -dport 3306
+```
+
+La primera regla permite el acceso desde el frontend y la segunda bloquea las demás conexiones al puerto 3306.
+
+Comprobamos la configuración:
+
+```bash
+pve-firewall compile
+```
+
+Verificamos las interfaces:
+
+```bash
+pct config 105 | grep '^net'
+```
+
+Activamos el servicio y comprobamos su estado:
+
+```bash
+systemctl start pve-firewall
+systemctl is-active pve-firewall
+```
+
+El servicio quedó activo y la conexión entre los contenedores siguió funcionando.
+
+**Captura 6:** Configuración y comprobación del firewall.
+
+---
+## 8. Copia de los archivos de PaiportArbolado
+
+Teníamos el proyecto guardado en nuestro ordenador Linux y lo copiamos a Proxmox.
+
+Desde el ordenador anfitrión:
+
+```bash
+scp -r /home/foribe/RSN/Prueba-0/paiportarbolado-src root@proxmox.local:/root/
+```
+
+Comprimimos la carpeta desde Proxmox:
+
+```bash
+cd /root
+tar -czf paiportarbolado.tar.gz paiportarbolado-src
+```
+
+Copiamos el archivo al contenedor 104:
+
+```bash
+pct push 104 /root/paiportarbolado.tar.gz /root/paiportarbolado.tar.gz
+```
+
+Entramos en el contenedor:
+
+```bash
+pct enter 104
+```
+
+Extraímos los archivos en el directorio de Apache:
+
+```bash
+tar -xzf /root/paiportarbolado.tar.gz -C /var/www/html/ --strip-components=1
+```
+
+Eliminamos la página predeterminada:
+
+```bash
+rm /var/www/html/index.html
+```
+
+Comprobamos los archivos:
+
+```bash
+ls -la /var/www/html/
+```
+
+### Permisos
+
+Configuramos los permisos del proyecto:
+
+```bash
+chown -R root:www-data /var/www/html
+find /var/www/html -type d -exec chmod 755 {} \;
+find /var/www/html -type f -exec chmod 644 {} \;
+```
+
+Permitimos que Apache pudiera escribir en las carpetas de imágenes y registros:
+
+```bash
+chown -R www-data:www-data /var/www/html/uploads /var/www/html/logs
+chmod 750 /var/www/html/uploads /var/www/html/logs
+```
+
+Protegimos el archivo de configuración:
+
+```bash
+chmod 640 /var/www/html/config.php
+```
+
+- ![alt text](permisos.png)
+
+## 9. Configuración de la conexión PHP-MySQL
+
+Editamos el archivo de configuración:
+
+```bash
+nano /var/www/html/config.php
+```
+
+Modificamos los parámetros para conectar la aplicación con el backend:
+
+```php
+define('DB_HOST', '192.168.30.11');
+define('DB_USER', 'paiporta');
+define('DB_PASS', 'CONTRASEÑA_PRIVADA');
+define('DB_NAME', 'PaiportArbolado');
+```
+
+Comprobamos la sintaxis:
+
+```bash
+php -l /var/www/html/config.php
+```
+## 10. Importación de la base de datos
+
+El proyecto contenía dos archivos SQL:
+
+- `create-db.sql`
+- `populate-sql.sql`
+
+Los copiamos al backend:
+
+```bash
+pct push 105 /root/paiportarbolado-src/create-db.sql /root/create-db.sql
+pct push 105 /root/paiportarbolado-src/populate-sql.sql /root/populate-sql.sql
+```
+
+Importamos la estructura:
+
+```bash
+pct exec 105 -- bash -c 'mysql -u root < /root/populate-sql.sql'
+```
+
+Comprobamos las tablas:
+
+```bash
+pct exec 105 -- mysql -u root -e "SHOW TABLES FROM PaiportArbolado;"
+```
+
+Verificamos la estructura:
+
+```bash
+pct exec 105 -- mysql -u root -e "DESCRIBE PaiportArbolado.arboles;"
+```
+
+Inicialmente se creó la tabla `arboles`.
+- ![alt text](bbdd.png)
+
+Creamos la tabla:
+
+```sql
+CREATE TABLE users (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    username VARCHAR(50) NOT NULL UNIQUE,
+    password VARCHAR(255) NOT NULL
+);
+```
+
+- ![alt text](usuario.png)
+Añadimos la columna:
+
+```bash
+pct exec 105 -- mysql -u root -e "ALTER TABLE PaiportArbolado.arboles ADD COLUMN imagenes VARCHAR(255) DEFAULT NULL;"
+```
+
+Comprobamos los permisos de la carpeta `uploads`:
+
+```bash
+pct exec 104 -- chown -R www-data:www-data /var/www/html/uploads
+pct exec 104 -- chmod 750 /var/www/html/uploads
+```
+
+# 12. Configuración del dominio local
+
+La práctica exige acceder mediante `paiporta-web.test`.
+
+Desde el ordenador Linux editamos:
+
+```bash
+sudo nano /etc/hosts
+```
+
+Añadimos:
+
+```text
+192.168.30.10 paiporta-web.test
+```
+
+## 13. Configuración de HTTPS
+
+Generamos un certificado SSL autofirmado utilizando OpenSSL.
+
+Entramos en el contenedor 104:
+
+```bash
+pct enter 104
+```
+
+Activamos SSL:
+
+```bash
+a2enmod ssl
+```
+
+Creamos el directorio:
+
+```bash
+mkdir -p /etc/apache2/ssl
+```
+
+Generamos el certificado:
+
+```bash
+openssl req -x509 -nodes -days 365 -newkey rsa:2048 \
+-keyout /etc/apache2/ssl/paiporta-web.key \
+-out /etc/apache2/ssl/paiporta-web.crt \
+-subj "/CN=paiporta-web.test" \
+-addext "subjectAltName=DNS:paiporta-web.test"
+```
+
+Protegimos la clave privada:
+
+```bash
+chmod 600 /etc/apache2/ssl/paiporta-web.key
+```
+
+Creamos la configuración de Apache:
+
+```bash
+nano /etc/apache2/sites-available/paiporta-ssl.conf
+```
+
+Contenido:
+
+```apache
+<VirtualHost *:443>
+    ServerName paiporta-web.test
+    DocumentRoot /var/www/html
+
+    SSLEngine on
+    SSLCertificateFile /etc/apache2/ssl/paiporta-web.crt
+    SSLCertificateKeyFile /etc/apache2/ssl/paiporta-web.key
+
+    <Directory /var/www/html>
+        Require all granted
+        AllowOverride All
+    </Directory>
+</VirtualHost>
+```
+
+Activamos el sitio:
+
+```bash
+a2ensite paiporta-ssl.conf
+```
+
+Comprobamos la configuración y recargamos Apache:
+
+```bash
+apache2ctl configtest
+systemctl reload apache2
+```
+- ![alt text](certificado.png)
+
+### Verificación HTTPS
+
+Desde el ordenador anfitrión:
+
+```bash
+curl -k -I https://paiporta-web.test
+```
+
+- ![alt text](https.png)
+
