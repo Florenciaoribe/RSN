@@ -529,4 +529,4 @@ De todas formas, estos resultados corresponden a nuestro entorno de pruebas con 
 
 
 
-redes contenedores
+# PRÁCTICA 1D - DESPLIEGUE DE PAIPORTARBOLADO EN DOS LXC EN PROXMOX

@@ -29,3 +29,7 @@ Accedemos desde el navegador a http://3.93.175.35 y comprobamos que aparece nues
 
 Hemos conseguido instalar Nginx y publicar una web automáticamente, sin necesidad de conectarnos por SSH.
 
+
+
+## wordpress
+instalado todo ya en ec2.
