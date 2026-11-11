@@ -162,7 +162,7 @@ lsblk -o NAME,SIZE,TYPE,FSTYPE,MOUNTPOINTS,MODEL
 ```bash
 mdadm --create /dev/md0 --level=1 --raid-devices=2 /dev/sdb /dev/sdc
 ```
-![alt text](image.png)
+![alt text](./IMG/image.png)
 
 
 
@@ -173,7 +173,7 @@ cat /proc/mdstat
 ```
 Que estado tiene el md0.
 
-![alt text](image-1.png)
+![alt text](./IMG/image-1.png)
 
 
 Hemos creado un array de disco y lo hemos registrado en proxmox. Para que cuando arranque lo idnentifique como arranque de disco..
@@ -181,24 +181,19 @@ Añadiendo el array
 ARRAY /dev/md0 metadata=1.2 UUID=5f70d22b:d6b111b6:7e758936:0305b089
 al fichero /etc/mdadm/mdadm.conf
 
-![alt text](image-4.png)
+![alt text](./IMG/image-4.png)
 
-![alt text](image-3.png)
-
-
-
-- ![alt text](image-5.png)
-
-- ![alt text](image-8.png)
-- ![alt text](image-9.png)
-- ![alt text](image-16.png)
-
-![alt text](image-17.png)
+![alt text](./IMG/image-3.png)
 
 
 
+- ![alt text](./IMG/image-5.png)
 
-![alt text](image-15.png)
+- ![alt text](./IMG/image-8.png)
+- ![alt text](./IMG/image-9.png)
+- ![alt text](./IMG/image-16.png)
+- ![alt text](./IMG/image-17.png)
+- ![alt text](./IMG/image-15.png)
 
 formatemos : 
 ```bash
@@ -211,10 +206,10 @@ mount /dev/raid1-vg/proxmox-data /mnt/raid1-lab/
 df -h /mnt/raid1-lab
 
 COmprobamos que se ha montado: 
-![alt text](image-6.png)
+![alt text](./IMG/image-6.png)
 
 Para que quede resistente modificar el fstab
-![alt text](image-7.png)
+![alt text](./IMG/image-7.png)
 
 
 UUID="4e6a89ca-47d4-478a-9cf0-60535c497b6e" /mnt/raid1-lab ext4 defaults,nofail,x-systemd.device-timeout=5s 0 2
@@ -233,10 +228,10 @@ mdadm --manage <ARRAY> --add sdd
 
 
 Verifica que sigue activo en estado degradado:
-![alt text](estado.png)
+![alt text](./IMG/estado.png)
 
 - Incoroportamos neuvamente el disco.
-![alt text](image-18.png)
+![alt text](./IMG/image-18.png)
 
 
 
@@ -642,7 +637,7 @@ Probamos la conexión:
 mysql -h 192.168.30.11 -u paiporta -p PaiportArbolado
 ```
 
-- ![alt text](conexion.png)
+- ![alt text](./IMG/conexion.png)
 
 ## 7. Configuración del firewall
 
@@ -794,7 +789,7 @@ Protegimos el archivo de configuración:
 chmod 640 /var/www/html/config.php
 ```
 
-- ![alt text](permisos.png)
+- ![alt text](./IMG/permisos.png)
 
 ## 9. Configuración de la conexión PHP-MySQL
 
@@ -851,7 +846,7 @@ pct exec 105 -- mysql -u root -e "DESCRIBE PaiportArbolado.arboles;"
 ```
 
 Inicialmente se creó la tabla `arboles`.
-- ![alt text](bbdd.png)
+- ![alt text](./IMG/bbdd.png)
 
 Creamos la tabla:
 
@@ -863,7 +858,7 @@ CREATE TABLE users (
 );
 ```
 
-- ![alt text](usuario.png)
+- ![alt text](./IMG/usuario.png)
 Añadimos la columna:
 
 ```bash
@@ -967,7 +962,7 @@ Comprobamos la configuración y recargamos Apache:
 apache2ctl configtest
 systemctl reload apache2
 ```
-- ![alt text](certificado.png)
+- ![alt text](./IMG/certificado.png)
 
 ### Verificación HTTPS
 
@@ -977,5 +972,493 @@ Desde el ordenador anfitrión:
 curl -k -I https://paiporta-web.test
 ```
 
-- ![alt text](https.png)
+- ![alt text](./IMG/https.png)
 
+
+
+
+
+
+# Práctica 1e - Configuración del Firewall en Proxmox
+
+## 1. Objetivo
+
+En esta práctica configuramos el firewall integrado de Proxmox para proteger los dos contenedores LXC de la aplicación PaiportArbolado, desplegada en la práctica anterior.
+
+El objetivo es permitir únicamente las conexiones necesarias para el funcionamiento de la aplicación y bloquear los accesos no autorizados.
+
+También configuramos reglas individuales, grupos de seguridad (Security Groups) y comprobamos las políticas de entrada y salida.
+
+## 2. Infraestructura utilizada
+
+Utilizamos los dos contenedores LXC que ya teníamos configurados:
+
+| Contenedor | ID | IP privada | Servicio |
+|---|---|---|---|
+| Paiporta-web | 104 | 192.168.30.10 | Apache y PHP |
+| Paiporta-DB | 105 | 192.168.30.11 | MySQL |
+
+El ordenador anfitrión tiene la dirección IP `192.168.30.199`.
+
+Las conexiones que queremos permitir son:
+
+| Destino | Puerto | Origen autorizado |
+|---|---|---|
+| Paiporta-web | TCP 80 (HTTP) | 192.168.30.199 |
+| Paiporta-web | TCP 443 (HTTPS) | 192.168.30.199 |
+| Paiporta-DB | TCP 3306 (MySQL) | 192.168.30.10 |
+
+El resto de conexiones entrantes quedarán bloqueadas mediante la política `DROP`.
+
+## 3. Comprobación del firewall existente
+
+Antes de modificar la configuración, revisamos el estado del firewall de Proxmox.
+
+Desde la Shell del nodo ejecutamos:
+
+```bash
+cat /etc/pve/firewall/cluster.fw
+cat /etc/pve/firewall/104.fw
+cat /etc/pve/firewall/105.fw
+systemctl is-active pve-firewall
+```
+
+Comprobamos que:
+
+- El firewall de Datacenter estaba activado.
+- El servicio `pve-firewall` estaba funcionando.
+- El contenedor 104 todavía no tenía un archivo de reglas.
+- El contenedor 105 ya tenía reglas configuradas para MySQL.
+
+La configuración inicial del backend permitía conexiones desde `192.168.30.10` al puerto 3306 y bloqueaba ese puerto para otros orígenes.
+
+
+
+## 4. Configuración del firewall del frontend
+
+Creamos el archivo de configuración del contenedor 104:
+
+```bash
+nano /etc/pve/firewall/104.fw
+```
+
+Introdujimos:
+
+```ini
+[OPTIONS]
+enable: 0
+policy_in: DROP
+policy_out: ACCEPT
+
+[RULES]
+IN ACCEPT -source 192.168.30.199/32 -p tcp -dport 80
+IN ACCEPT -source 192.168.30.199/32 -p tcp -dport 443
+```
+
+Esta configuración permite:
+
+- Acceso HTTP por el puerto 80.
+- Acceso HTTPS por el puerto 443.
+- Conexiones únicamente desde nuestro ordenador.
+- Conexiones salientes mediante `policy_out: ACCEPT`.
+
+La política `DROP` bloquea cualquier conexión entrante que no esté permitida expresamente.
+
+Inicialmente dejamos `enable: 0` para preparar las reglas sin aplicarlas todavía.
+
+## 5. Configuración del firewall del backend
+
+Modificamos el archivo del contenedor 105:
+
+```bash
+nano /etc/pve/firewall/105.fw
+```
+
+La configuración quedó así:
+
+```ini
+[OPTIONS]
+enable: 1
+policy_in: DROP
+policy_out: ACCEPT
+
+[RULES]
+IN ACCEPT -source 192.168.30.10/32 -p tcp -dport 3306
+```
+
+La regla permite que únicamente el frontend pueda conectarse al puerto MySQL del backend.
+
+Eliminamos la regla explícita `DROP` que existía anteriormente, porque la política predeterminada de entrada ya bloquea todo el tráfico que no esté autorizado.
+
+
+## 6. Comprobación de las reglas
+
+Para verificar la configuración ejecutamos:
+
+```bash
+pve-firewall compile
+```
+
+También comprobamos el contenido de ambos archivos:
+
+```bash
+cat /etc/pve/firewall/104.fw
+cat /etc/pve/firewall/105.fw
+```
+
+Verificamos las interfaces del frontend:
+
+```bash
+pct config 104 | grep '^net'
+```
+
+Las interfaces utilizadas para el filtrado deben tener habilitada la opción `firewall=1`.
+
+Posteriormente activamos el firewall del frontend:
+
+```bash
+sed -i 's/^enable: 0$/enable: 1/' /etc/pve/firewall/104.fw
+```
+
+Comprobamos su estado:
+
+```bash
+grep '^enable:' /etc/pve/firewall/104.fw
+```
+
+El resultado fue:
+
+```text
+enable: 1
+```
+
+## 7. Problema de conectividad con los contenedores
+
+Después de activar el firewall intentamos comprobar el acceso a la aplicación:
+
+```bash
+curl -I http://paiporta-web.test
+curl -k -I https://paiporta-web.test
+```
+
+Las conexiones fallaban con el mensaje:
+
+```text
+No existe ninguna ruta hasta el host
+```
+
+Inicialmente pensamos que podía deberse a las reglas del firewall, por lo que desactivamos temporalmente el firewall del contenedor 104:
+
+```bash
+sed -i 's/^enable: 1$/enable: 0/' /etc/pve/firewall/104.fw
+```
+
+Sin embargo, el error continuaba.
+
+Finalmente detectamos que **los contenedores estaban apagados**.
+
+Una vez iniciados, la aplicación volvió a funcionar correctamente.
+
+Reactivamos el firewall del contenedor 104:
+
+```bash
+sed -i 's/^enable: 0$/enable: 1/' /etc/pve/firewall/104.fw
+```
+
+Con esto comprobamos la importancia de verificar el estado de los contenedores antes de atribuir un problema de conectividad al firewall.
+
+## 8. Pruebas de conexiones permitidas
+
+Desde nuestro ordenador Linux ejecutamos:
+
+```bash
+curl -I http://paiporta-web.test
+curl -k -I https://paiporta-web.test
+```
+
+Ambas conexiones funcionaron correctamente.
+
+También utilizamos `nc` para comprobar los puertos:
+
+```bash
+nc -vz -w 3 192.168.30.10 80
+nc -vz -w 3 192.168.30.10 443
+```
+
+Los resultados fueron:
+
+```text
+Connection to 192.168.30.10 80 port [tcp/http] succeeded!
+Connection to 192.168.30.10 443 port [tcp/https] succeeded!
+```
+
+Por tanto, comprobamos que el firewall permite el tráfico HTTP y HTTPS desde el origen autorizado.
+
+### Conexión desde el frontend a MySQL
+
+Desde la Shell de Proxmox ejecutamos:
+
+```bash
+pct exec 104 -- mysql -h 192.168.30.11 -u paiporta -p PaiportArbolado
+```
+
+La conexión funcionó correctamente.
+
+Esto confirma que la aplicación puede continuar comunicándose con su base de datos.
+
+
+
+## 9. Pruebas de conexiones bloqueadas
+
+Comprobamos que los puertos no autorizados estuvieran bloqueados.
+
+Desde nuestro ordenador ejecutamos:
+
+```bash
+nc -vz -w 3 192.168.30.10 22
+nc -vz -w 3 192.168.30.11 3306
+```
+
+Obtuvimos respuestas similares a:
+
+```text
+nc: connect to 192.168.30.10 port 22 (tcp) timed out
+nc: connect to 192.168.30.11 port 3306 (tcp) timed out
+```
+
+Esto demuestra que:
+
+- Nuestro ordenador no puede acceder por SSH al frontend.
+- Nuestro ordenador no puede conectarse directamente a MySQL.
+
+Sin embargo, el frontend sí puede conectarse a MySQL, porque su IP está autorizada.
+
+
+## 10. Creación de Security Groups
+
+Después de comprobar las reglas individuales, configuramos dos grupos de seguridad para reutilizar las mismas reglas.
+
+Los Security Groups permiten agrupar reglas y aplicarlas a diferentes contenedores sin tener que configurarlas individualmente.
+
+Editamos el archivo general del firewall:
+
+```bash
+nano /etc/pve/firewall/cluster.fw
+```
+
+Conservamos las reglas de administración de Proxmox y añadimos los grupos:
+
+```ini
+[OPTIONS]
+enable: 1
+
+[RULES]
+IN ACCEPT -p tcp -dport 8006
+IN ACCEPT -p tcp -dport 22
+
+[group paiporta-web]
+IN ACCEPT -source 192.168.30.199/32 -p tcp -dport 80
+IN ACCEPT -source 192.168.30.199/32 -p tcp -dport 443
+
+[group paiporta-db]
+IN ACCEPT -source 192.168.30.10/32 -p tcp -dport 3306
+```
+
+Creamos dos grupos:
+
+**paiporta-web**
+
+- Permite conexiones TCP 80.
+- Permite conexiones TCP 443.
+- Limita el acceso a `192.168.30.199`.
+
+**paiporta-db**
+
+- Permite conexiones TCP 3306.
+- Limita el acceso a `192.168.30.10`.
+
+Comprobamos que ambos grupos aparecían en:
+
+`Datacenter → Firewall → Security Groups`
+- ![alt text](./IMG/firewall.png)
+
+## 11. Aplicación de los grupos a los contenedores
+
+Sustituimos las reglas individuales por los grupos de seguridad.
+
+### Frontend (104)
+
+Editamos:
+
+```bash
+nano /etc/pve/firewall/104.fw
+```
+
+La configuración final quedó:
+
+```ini
+[OPTIONS]
+enable: 1
+policy_in: DROP
+policy_out: ACCEPT
+
+[RULES]
+GROUP paiporta-web
+```
+
+### Backend (105)
+
+Editamos:
+
+```bash
+nano /etc/pve/firewall/105.fw
+```
+
+La configuración final quedó:
+
+```ini
+[OPTIONS]
+enable: 1
+policy_in: DROP
+policy_out: ACCEPT
+
+[RULES]
+GROUP paiporta-db
+```
+
+De esta forma cada contenedor utiliza su Security Group correspondiente y evitamos duplicar las reglas individuales.
+
+## 12. Problema con los nombres de los Security Groups
+
+Al aplicar inicialmente los grupos utilizamos nombres en mayúsculas:
+
+```ini
+GROUP PAIPORTA-WEB
+GROUP PAIPORTA-DB
+```
+
+Al compilar la configuración aparecieron los siguientes mensajes:
+
+```text
+no such security group 'PAIPORTA-WEB'
+no such security group 'PAIPORTA-DB'
+```
+
+El problema se debía a que los nombres utilizados no coincidían con los nombres normalizados de los grupos.
+
+Lo solucionamos cambiando las referencias a minúsculas:
+
+```ini
+GROUP paiporta-web
+GROUP paiporta-db
+```
+
+Volvimos a comprobar la configuración:
+
+```bash
+pve-firewall compile
+```
+
+Los errores desaparecieron y los grupos comenzaron a funcionar correctamente.
+
+**Captura 6:** Configuración final de los contenedores utilizando Security Groups.
+
+## 13. Verificación de los Security Groups
+
+Una vez aplicados los grupos, repetimos las pruebas de conectividad.
+
+### Conexiones permitidas
+
+Desde nuestro ordenador:
+
+```bash
+curl -I http://paiporta-web.test
+curl -k -I https://paiporta-web.test
+```
+
+Ambas conexiones funcionaron.
+
+También comprobamos que el frontend seguía accediendo a MySQL:
+
+```bash
+pct exec 104 -- mysql -h 192.168.30.11 -u paiporta -p PaiportArbolado
+```
+
+### Conexiones bloqueadas
+
+Ejecutamos nuevamente:
+
+```bash
+nc -vz -w 3 192.168.30.10 22
+nc -vz -w 3 192.168.30.11 3306
+```
+
+Ambas conexiones terminaron en timeout.
+
+Esto demuestra que los Security Groups mantienen el comportamiento de las reglas individuales.
+
+**Captura 7:** Pruebas de conexiones bloqueadas después de aplicar los grupos.
+
+## 14. Comprobación de conexiones salientes
+
+La práctica establece una política de salida `ACCEPT`, que permite a los contenedores iniciar conexiones hacia Internet.
+
+Comprobamos el acceso a los repositorios:
+
+```bash
+pct exec 104 -- apt update
+pct exec 105 -- apt update
+```
+
+La actualización de los índices de paquetes funcionó correctamente.
+
+Con esto comprobamos que las reglas del firewall no impedían las conexiones necesarias para mantener los contenedores actualizados.
+
+- ![alt text](./IMG/firewall1.png)
+
+## 15. Revisión de logs del firewall
+
+Accedimos al apartado:
+
+`Paiporta-DB → Firewall → Log`
+
+Comprobamos que no aparecían eventos registrados.
+
+Esto puede deberse a que no estaba habilitado el registro de las reglas o a la configuración del nivel de logging.
+
+No fue necesario modificar esta configuración, porque ya habíamos comprobado el funcionamiento del firewall mediante pruebas reales de conectividad.
+
+
+
+## 16. Diferencia entre reglas individuales y Security Groups
+
+| Reglas individuales | Security Groups |
+|---|---|
+| Se configuran en cada contenedor | Se definen en Datacenter |
+| Son específicas de un LXC | Pueden reutilizarse |
+| Cada regla se administra individualmente | Varias reglas se administran juntas |
+| Adecuadas para configuraciones concretas | Adecuados para varios contenedores con necesidades similares |
+
+En esta práctica comprobamos ambos métodos.
+
+Primero configuramos las reglas directamente en los contenedores y posteriormente las sustituimos por Security Groups.
+
+El resultado fue el mismo, pero los grupos permiten organizar mejor las reglas y reutilizarlas.
+
+
+
+## 19. Conclusión
+
+En esta práctica hemos configurado el firewall integrado de Proxmox para proteger los dos contenedores LXC de PaiportArbolado.
+
+Primero creamos reglas individuales para permitir únicamente las conexiones necesarias. Después configuramos las políticas de entrada `DROP` y salida `ACCEPT`.
+
+Comprobamos mediante `curl` y `nc` que las conexiones autorizadas funcionaban correctamente y que los accesos no autorizados quedaban bloqueados.
+
+Posteriormente creamos dos Security Groups y sustituimos las reglas individuales por estos grupos, manteniendo el mismo comportamiento.
+
+Durante la práctica encontramos problemas relacionados con la conectividad de los contenedores y con los nombres de los grupos de seguridad, que conseguimos solucionar.
+
+Finalmente, verificamos que la aplicación seguía funcionando, que MySQL solo era accesible desde el frontend y que los contenedores podían continuar conectándose a Internet.
+
+Esta práctica nos ha permitido comprender cómo funciona el firewall de Proxmox y cómo utilizar reglas y grupos de seguridad para controlar el acceso a los servicios.
