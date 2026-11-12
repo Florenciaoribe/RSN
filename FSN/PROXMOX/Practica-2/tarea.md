@@ -535,3 +535,147 @@ Comprobamos que el clon conservaba WordPress, sus tablas MySQL y la entrada que 
 Finalmente, creamos una nueva entrada desde el clon para demostrar que podía guardar sus propios datos.
 
 Esta práctica nos ha permitido comprender cómo funcionan las plantillas y los clones en Proxmox, y cómo podemos utilizarlos para desplegar nuevas instancias de una aplicación sin tener que repetir toda su instalación.
+
+
+
+
+# Práctica 3b. Creación de Compra Paiporta con WordPress
+
+## 1. Objetivo
+
+El objetivo de esta práctica es crear una página web utilizando WordPress en Proxmox.
+
+La web se llama **Compra Paiporta** y está orientada a promocionar los comercios locales, sus ofertas y los eventos del municipio.
+
+## 2. Preparación de WordPress
+
+Para esta práctica reutilizamos el contenedor LXC que habíamos clonado en la práctica anterior.
+
+Datos del contenedor:
+
+- **ID:** 111
+- **Nombre:** wordpress-clon
+- **IP:** 192.168.40.21
+- **Dominio:** comercio.paiporta.local
+
+Configuramos Apache y WordPress para acceder a la web mediante el nuevo dominio.
+
+También modificamos las direcciones `siteurl` y `home` de la base de datos, ya que WordPress seguía redirigiendo al dominio anterior.
+
+Finalmente, comprobamos que podíamos acceder al panel de administración:
+
+http://comercio.paiporta.local/wp-admin/
+
+
+## 3. Configuración del sitio
+
+Desde el panel de administración configuramos la información principal de la web:
+
+- **Nombre:** Compra Paiporta
+- **Descripción:** Plataforma dedicada al comercio local.
+- **Zona horaria:** Madrid.
+- **Enlaces permanentes:** Nombre de la entrada.
+
+También configuramos la página Inicio como portada estática.
+
+## 4. Creación de páginas
+
+Creamos las siguientes páginas:
+
+- Inicio
+- Comercio
+- Cupones
+- Eventos
+- Ayuda
+- Contacto
+- Mi perfil
+
+Cada página contiene información relacionada con su sección.
+
+
+## 5. Creación de noticias y comercios
+
+Creamos una entrada de noticias titulada **Novedades del sitio**.
+
+También añadimos dos comercios ficticios:
+
+- Panadería El Forn de Paiporta.
+- Floristería La Plaça.
+
+Incluimos información de los establecimientos y utilizamos imágenes para acompañar el contenido.
+
+Además, organizamos las entradas mediante categorías.
+
+
+## 6. Cupones y eventos
+
+En la página Cupones añadimos ofertas de ejemplo relacionadas con los comercios.
+
+También completamos la página Eventos con actividades ficticias de Paiporta.
+
+El objetivo es mostrar cómo se podría utilizar la web para promocionar ofertas y actividades locales.
+
+## 7. Menú de navegación y portada
+
+Configuramos el menú principal para navegar entre las distintas páginas.
+
+Después editamos la página Inicio y añadimos:
+
+- Título y presentación de Compra Paiporta.
+- Tres columnas principales: Comercio, Cupones y Eventos.
+- Enlaces a Ayuda y Mi perfil.
+- Un enlace a Contacto para los comercios interesados.
+
+De esta forma, los visitantes pueden acceder fácilmente a las distintas secciones.
+
+
+## 8. Copia de seguridad de la base de datos
+
+Realizamos una copia de seguridad de la base de datos de WordPress mediante `mysqldump`.
+
+Comando utilizado:
+
+    mysqldump -u root --single-transaction wordpress > /root/backups/wordpress.sql
+
+Comprobamos que el archivo se había generado correctamente.
+
+Esta copia permite conservar la información almacenada en la base de datos.
+
+
+
+## 9. Exportación del contenido
+
+Para poder reutilizar la web en AWS, exportamos su contenido desde WordPress.
+
+Accedimos a:
+
+**Tools → Export → All content → Download Export File**
+
+Descargamos un archivo XML que contiene las páginas, entradas y otros contenidos de WordPress.
+
+Este archivo se utilizará posteriormente para importar el contenido a WordPress en AWS.
+
+
+## 10. Comprobaciones finales
+
+Accedimos a la web desde el navegador y comprobamos su funcionamiento.
+
+También revisamos:
+
+- El acceso a las páginas.
+- Los enlaces del menú.
+- La presentación de la portada.
+- La visualización desde un dispositivo móvil.
+
+La web funciona correctamente desde la dirección:
+
+http://comercio.paiporta.local
+
+
+## 11. Conclusión
+
+En esta práctica hemos creado una web de comercio local utilizando WordPress sobre un contenedor LXC de Proxmox.
+
+Hemos aprendido a configurar WordPress, crear páginas y entradas, organizar el contenido, diseñar la portada y configurar la navegación.
+
+Además, hemos realizado una copia de seguridad de la base de datos y exportado el contenido para poder trasladarlo posteriormente a AWS.
