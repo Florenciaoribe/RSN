@@ -208,3 +208,120 @@ Hemos comprobado que podemos utilizar esta imagen para lanzar una nueva instanci
 Además, hemos verificado que **la nueva instancia conserva la entrada creada en la original**, demostrando que la AMI permite replicar una configuración previamente preparada.
 
 La instancia original y el clon son recursos EC2 diferentes, aunque procedan de la misma imagen.
+
+
+
+# Importación de Compra Paiporta desde Proxmox a AWS
+
+## 1. Objetivo
+
+El objetivo es trasladar el contenido de nuestra web **Compra Paiporta**, creada con WordPress en Proxmox, a una instancia EC2 de AWS.
+
+Para evitar tener que crear nuevamente todas las páginas y publicaciones, utilizaremos el archivo XML que exportamos anteriormente desde WordPress.
+
+## 2. Recuperar WordPress desde la AMI
+
+Como habíamos eliminado la instancia EC2 de WordPress, utilizaremos la AMI que conservamos de la práctica anterior.
+
+1. Acceder a **AWS → EC2 → AMI**.
+2. Seleccionar **Mis AMI**.
+3. Buscar la AMI de WordPress.
+4. Pulsar **Lanzar instancia desde AMI**.
+5. Configurar la red, la clave SSH y el grupo de seguridad.
+6. Permitir el puerto **80 (HTTP)** para acceder a la web y el **22 (SSH)** únicamente desde nuestra IP.
+7. Pulsar **Lanzar instancia**.
+
+Una vez iniciada, anotaremos su nueva dirección IPv4 pública.
+
+
+
+## 3. Acceder a WordPress en AWS
+
+Desde el navegador accederemos a:
+
+    http://IP_PUBLICA_AWS/wp-admin/
+
+Sustituiremos `IP_PUBLICA_AWS` por la dirección pública de nuestra instancia.
+
+Si WordPress nos redirige a la IP antigua, tendremos que actualizar las direcciones `home` y `siteurl` de WordPress con la nueva IP antes de continuar.
+
+
+
+## 4. Importar el archivo XML
+
+Dentro del panel de administración de WordPress:
+
+1. Acceder a **Herramientas → Importar**.
+2. Buscar el apartado **WordPress**.
+3. Pulsar **Instalar ahora**, si todavía no está instalado.
+4. Pulsar **Ejecutar el importador**.
+5. Seleccionar el archivo `.xml` que descargamos desde Proxmox.
+6. Pulsar **Subir archivo e importar**.
+7. Asignar las publicaciones a nuestro usuario administrador de AWS.
+8. Marcar **Descargar e importar archivos adjuntos**.
+9. Pulsar **Enviar** para finalizar.
+
+Con este procedimiento importaremos las páginas, entradas y otros contenidos de Compra Paiporta.
+
+
+
+## 5. Configurar la portada
+
+Después de importar el contenido, configuraremos la página principal.
+
+1. Acceder a **Ajustes → Lectura**.
+2. En **Tu portada muestra**, seleccionar **Una página estática**.
+3. En **Portada**, seleccionar **INICIO**.
+4. Pulsar **Guardar cambios**.
+
+De esta forma, al acceder a la IP pública de AWS, aparecerá nuestra página de inicio.
+
+
+
+## 6. Configurar el menú de navegación
+
+Accederemos a **Apariencia → Editor → Navegación**.
+
+Comprobaremos que el menú contiene las siguientes páginas:
+
+- INICIO
+- Comercio
+- Cupones
+- Eventos
+- Ayuda
+- Contacto
+- Mi perfil
+
+Ordenaremos los enlaces y guardaremos los cambios.
+
+
+
+## 7. Comprobaciones finales
+
+Accederemos a la web desde su IP pública y comprobaremos:
+
+- Que aparece la portada de Compra Paiporta.
+- Que las páginas y publicaciones se han importado.
+- Que funcionan los enlaces del menú.
+- Que aparecen los comercios, cupones y eventos.
+- Que las imágenes se muestran correctamente.
+- Que la web puede visualizarse desde un dispositivo móvil.
+
+
+
+## 8. Observaciones
+
+La exportación XML de WordPress permite trasladar el contenido, pero no garantiza copiar el diseño completo, los temas, los plugins ni todas las configuraciones.
+
+Además, como la instalación original de Proxmox utiliza una dirección privada, es posible que AWS no pueda descargar automáticamente las imágenes. En ese caso, tendremos que transferirlas por separado.
+
+Antes de importar, conviene realizar una copia de seguridad del WordPress de AWS si contiene información que debamos conservar.
+
+Este procedimiento es diferente a la restauración de una base de datos mediante `mysqldump`, que realizamos en la Práctica 5a.
+
+## 9. Conclusión
+
+Mediante la herramienta de importación de WordPress podremos reutilizar en AWS el contenido de Compra Paiporta creado previamente en Proxmox.
+
+Esto nos permitirá disponer del mismo proyecto en ambas plataformas sin tener que volver a crear manualmente todas las páginas y publicaciones.
+
