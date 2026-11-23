@@ -539,3 +539,353 @@ Por último, estudiamos el procedimiento para restaurar los archivos y la base d
 - Automatización con cron: comprobada.
 - Restauración en clones: documentada, pendiente de ejecución.
 - Copias incrementales: ampliación opcional no realizada.
+
+
+
+
+# Práctica 5c. Backup con RSYNC y CRON
+
+## 1. Objetivo
+
+El objetivo de esta práctica es realizar copias de seguridad de los archivos web y de la base de datos de **Paiporta Arbolado**, utilizando RSYNC y MySQL.
+
+También configuramos CRON para automatizar las copias y realizamos una ampliación para enviarlas a otro contenedor.
+
+## 2. Entorno utilizado
+
+Utilizamos los contenedores LXC de Proxmox que ya teníamos creados:
+
+| Contenedor | IP | Función |
+|---|---|---|
+| 104 - Paiporta-web | 192.168.30.10 | Servidor web y origen de las copias |
+| 105 - Paiporta-DB | 192.168.30.11 | Servidor MySQL y destino de las copias |
+
+Datos de la aplicación:
+
+- Directorio web: `/var/www/html`
+- Base de datos: `PaiportArbolado`
+- Usuario MySQL: `paiporta`
+
+## 3. Preparación de RSYNC
+
+Entramos en el contenedor 104 desde Proxmox:
+
+    pct enter 104
+
+Comprobamos que RSYNC estaba instalado:
+
+    rsync --version
+
+Creamos el directorio para guardar las copias:
+
+    mkdir -p /BACKUPS/paiportarbolado-rsync
+    chmod 700 /BACKUPS/paiportarbolado-rsync
+
+Comprobamos que existía:
+
+    ls -ld /BACKUPS/paiportarbolado-rsync
+
+Utilizamos una carpeta diferente a la práctica anterior para no mezclar los backups de TAR con los de RSYNC.
+
+## 4. Creación del script de backup
+
+Creamos el script:
+
+    nano /usr/local/sbin/backup-paiporta-rsync.sh
+
+Contenido:
+
+    #!/bin/bash
+    set -euo pipefail
+    umask 077
+
+    SOURCE="/var/www/html"
+    BACKUP_DIR="/BACKUPS/paiportarbolado-rsync"
+    DB_NAME="PaiportArbolado"
+    DB_CONFIG="/root/.my.cnf"
+    FECHA=$(date +%F_%H-%M-%S)
+
+    COPIA_DIR="$BACKUP_DIR/$FECHA"
+    DB_BACKUP="$COPIA_DIR/database.sql"
+    WEB_BACKUP="$COPIA_DIR/web"
+
+    if [ ! -d "$SOURCE" ]; then
+        echo "Error: no existe el directorio web."
+        exit 1
+    fi
+
+    if [ ! -f "$DB_CONFIG" ]; then
+        echo "Error: no existe la configuración de MySQL."
+        exit 1
+    fi
+
+    if [ -e "$COPIA_DIR" ]; then
+        echo "Error: ya existe esta copia."
+        exit 1
+    fi
+
+    mkdir -p "$WEB_BACKUP"
+
+    mysqldump --defaults-extra-file="$DB_CONFIG" \
+        --single-transaction --quick --no-tablespaces \
+        "$DB_NAME" > "$DB_BACKUP"
+
+    rsync -a "$SOURCE/" "$WEB_BACKUP/"
+
+    echo "Copia completa creada en $COPIA_DIR"
+
+El script genera una carpeta diferente para cada backup, identificada por su fecha y hora.
+
+Dentro se guardan:
+
+- `database.sql`: copia de seguridad de MySQL.
+- `web/`: archivos de la aplicación web.
+
+## 5. Permisos y ejecución
+
+Asignamos los permisos al script:
+
+    chown root:root /usr/local/sbin/backup-paiporta-rsync.sh
+    chmod 750 /usr/local/sbin/backup-paiporta-rsync.sh
+
+Ejecutamos el backup manualmente:
+
+    /usr/local/sbin/backup-paiporta-rsync.sh
+
+Inicialmente apareció un error porque el contenedor 105 estaba apagado y no se podía conectar a MySQL.
+
+Lo solucionamos iniciando el contenedor desde Proxmox:
+
+    pct start 105
+
+Volvimos a ejecutar el script y funcionó correctamente.
+
+## 6. Comprobación de las copias
+
+Utilizamos los siguientes comandos:
+
+    tree /BACKUPS/paiportarbolado-rsync/
+
+    find /BACKUPS/paiportarbolado-rsync/ -type f
+
+Comprobamos que se habían creado carpetas con fecha y hora.
+
+De esta forma, confirmamos que RSYNC había copiado los archivos de la web y que MySQL había generado su archivo SQL.
+
+## 7. Automatización con CRON
+
+Configuramos una tarea para ejecutar el script automáticamente.
+
+Abrimos el crontab:
+
+    crontab -e
+
+Añadimos la siguiente línea:
+
+    0 3 * * * /usr/local/sbin/backup-paiporta-rsync.sh >> /var/log/backup-paiporta-rsync.log 2>&1
+
+Esta tarea ejecuta el backup todos los días a las **03:00**.
+
+Elegimos esta hora para que no coincidiera con la copia de TAR, que habíamos programado a las 02:00.
+
+Comprobamos la programación:
+
+    crontab -l
+
+## 8. Prueba de ejecución automática
+
+Para comprobar que CRON funcionaba, programamos temporalmente una ejecución a una hora cercana.
+
+Después revisamos el registro:
+
+    tail -n 10 /var/log/backup-paiporta-rsync.log
+
+El resultado fue:
+
+    Copia completa creada en /BACKUPS/paiportarbolado-rsync/2026-11-23_16-38-01
+
+Esto confirmó que CRON había ejecutado correctamente el script y generado una nueva copia.
+
+Después retiramos la programación de prueba para conservar la tarea diaria.
+
+## 9. Ampliación: enviar las copias a otro contenedor
+
+Decidimos mejorar la práctica para no guardar todas las copias únicamente en el contenedor 104.
+
+Configuramos el contenedor 105 como destino de backups mediante **RSYNC**
+
+### 9.1. Preparación del contenedor 105
+
+Entramos en el contenedor:
+
+    pct enter 105
+
+Comprobamos que RSYNC estaba instalado:
+
+    rsync --version
+
+Creamos el directorio de destino:
+
+    mkdir -p /BACKUPS/paiportarbolado-rsync
+    chmod 700 /BACKUPS/paiportarbolado-rsync
+
+
+## 9.2. Configuración del firewall
+
+Al intentar enviar las copias desde el contenedor 104, la conexión se quedaba esperando.
+
+Comprobamos el puerto:
+
+    nc -vz -w 5 192.168.30.11 873
+
+El resultado indicaba que la conexión agotaba el tiempo de espera.
+
+Revisamos la configuración del firewall de Proxmox:
+
+    cat /etc/pve/firewall/105.fw
+
+    cat /etc/pve/firewall/cluster.fw
+
+Descubrimos que el grupo de seguridad `PAIPORTA-DB` únicamente permitía el puerto 3306 de MySQL.
+
+Editamos el archivo:
+
+    nano /etc/pve/firewall/cluster.fw
+
+Añadimos la regla para permitir RSYNC desde el contenedor 104:
+
+    IN ACCEPT -source 192.168.30.10/32 -p tcp -dport 873
+
+Dejamos permitidos los puertos:
+
+- 3306/TCP: MySQL.
+- 873/TCP: RSYNC.
+
+Ambos únicamente desde la IP `192.168.30.10`.
+
+Volvimos a comprobar:
+
+    nc -vz -w 5 192.168.30.11 873
+
+Esta vez la conexión funcionó.
+
+- ![alt text](./IMG/firewall.png)
+
+## 11. Transferencia de backups al contenedor 105
+
+Desde el contenedor 104 utilizamos RSYNC para enviar las copias al servidor 105:
+
+    rsync -av /BACKUPS/paiportarbolado-rsync/ \
+      rsync://192.168.30.11/paiporta-backup/
+
+El comando transfirió los archivos y mostró el resumen de la transferencia.
+
+Se enviaron aproximadamente 4,24 MB de datos.
+
+Posteriormente, desde Proxmox comprobamos las carpetas del destino:
+
+    pct exec 105 -- ls -lh /BACKUPS/paiportarbolado-rsync/
+
+Aparecieron los directorios:
+
+    2026-11-23_16-26-55
+    2026-11-23_16-32-54
+    2026-11-23_16-35-44
+    2026-11-23_16-38-01
+
+Por tanto, confirmamos que las copias también estaban almacenadas en el contenedor 105.
+
+
+## 12. Simulación de restauración
+
+El enunciado propone restaurar los archivos y la base de datos en clones aislados.
+
+No realizamos esta parte de forma práctica, pero el procedimiento sería el siguiente.
+
+### Restaurar los archivos web
+
+Seleccionamos la carpeta del backup:
+
+    FECHA="FECHA_DEL_BACKUP"
+    COPIA_DIR="/BACKUPS/paiportarbolado-rsync/$FECHA"
+    SOURCE="/var/www/html"
+
+En el clon web, detenemos Apache:
+
+    systemctl stop apache2
+
+Apartamos los archivos originales:
+
+    mv "$SOURCE" "${SOURCE}.fallo-$FECHA"
+    mkdir -p "$SOURCE"
+
+Restauramos los archivos mediante RSYNC:
+
+    rsync -a "$COPIA_DIR/web/" "$SOURCE/"
+
+### Restaurar la base de datos
+
+En la base de datos clonada, crearíamos una base vacía y restauraríamos el archivo SQL:
+
+    mysql -h IP_DB_CLON -u USUARIO_RESTAURACION -p \
+      PaiportArbolado < "$COPIA_DIR/database.sql"
+
+Después comprobaríamos las tablas:
+
+    mysql -h IP_DB_CLON -u USUARIO_RESTAURACION -p \
+      -e "SHOW TABLES FROM PaiportArbolado;"
+
+Finalmente, revisaríamos la configuración de la aplicación para que apunte a la base clonada e iniciaríamos Apache.
+
+**Importante:** estos comandos son una simulación de estudio y no deben ejecutarse sobre los contenedores originales.
+
+## 13. Comandos importantes
+
+### Copiar archivos con RSYNC
+
+    rsync -a /origen/ /destino/
+
+### Restaurar archivos con RSYNC
+
+    rsync -a /backup/web/ /var/www/html/
+
+### Enviar archivos a un servidor RSYNC remoto
+
+    rsync -av /origen/ rsync://IP_DESTINO/MODULO/
+
+### Crear un backup de MySQL
+
+    mysqldump -u usuario -p --no-tablespaces basedatos > backup.sql
+
+### Restaurar MySQL
+
+    mysql -u usuario -p basedatos < backup.sql
+
+### Comprobar el puerto RSYNC
+
+    nc -vz -w 5 IP_DESTINO 873
+
+### Programar una tarea diaria a las 03:00
+
+    0 3 * * * /ruta/script.sh
+
+## 14. Conclusión
+
+En esta práctica hemos aprendido a realizar copias de seguridad utilizando RSYNC y mysqldump.
+
+Creamos un script que guarda los archivos web y la base de datos en directorios identificados por fecha y hora.
+
+También configuramos CRON y comprobamos que ejecutaba las copias automáticamente.
+
+Como ampliación, configuramos el contenedor 105 como servidor RSYNC y transferimos las copias desde el contenedor 104, solucionando un problema de conexión provocado por el firewall de Proxmox.
+
+**Estado de la práctica:**
+
+- Backup local con RSYNC: realizado.
+- Backup de MySQL: realizado.
+- Automatización con CRON: comprobada.
+- Transferencia remota al contenedor 105: realizada.
+- Restauración en clones: simulada, no ejecutada.
+- Snapshots con `--link-dest`: ampliación opcional no realizada.
+
+La transferencia remota se comprobó manualmente. No se configuró su ejecución automática dentro del script de CRON.
